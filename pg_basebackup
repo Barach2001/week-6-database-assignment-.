@@ -1,0 +1,30 @@
+mkdir -p ~/backups
+pg_dump -Fc -f ~/backups/bootcamp.dump bootcamp
+pg_restore --list ~/backups/bootcamp.dump | head
+createdb bootcamp_check && pg_restore -d bootcamp_check ~/backups/bootcamp.dump
+sudo nano /etc/postgresql/*/main/postgresql.conf
+wal_level = replica
+archive_mode = on
+archive_command = 'cp %p /home/$USER/backups/wal/%f'
+mkdir -p ~/backups/wal
+sudo systemctl restart postgresql
+pg_basebackup -D ~/backups/base -Ft -z -Xs -P
+SELECT now();   -- Copy this timestamp down (e.g., 2026-11-04 12:00:00)
+DELETE FROM students;   -- oops!
+\q
+sudo systemctl stop postgresql
+sudo rm -rf /var/lib/postgresql/*/main/*
+sudo tar -xzf ~/backups/base/base.tar.gz -C /var/lib/postgresql/16/main/
+sudo tee -a /etc/postgresql/*/main/postgresql.conf <<EOF
+restore_command = 'cp /home/$USER/backups/wal/%f %p'
+recovery_target_time = '2026-11-04 12:00:00'
+EOF
+sudo systemctl start postgresql
+SELECT count(*) FROM students;
+CREATE ROLE replicator WITH REPLICATION LOGIN PASSWORD 'reppass';
+CREATE ROLE replicator WITH REPLICATION LOGIN PASSWORD 'reppass';
+host replication replicator 127.0.0.1/32 md5
+pg_basebackup -h 127.0.0.1 -U replicator -D ~/standby -R -P
+SELECT application_name, state,
+       pg_wal_lsn_diff(sent_lsn, replay_lsn) AS lag_bytes
+FROM pg_stat_replication;
